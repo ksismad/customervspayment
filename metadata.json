@@ -1,0 +1,5 @@
+{
+  "name": "AuditMatch Pro",
+  "description": "A financial reconciliation tool to compare book accounting records against payment reports. Features intelligent filtering, gap analysis, and visual status reporting.",
+  "requestFramePermissions": []
+}
