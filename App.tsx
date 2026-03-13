@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ReconciliationResult, ColumnMapping, BookEntry, PaymentEntry } from './types';
-import { parseRawCsv, parseRawExcel, extractBookData, extractPaymentData, guessMapping } from './services/parserService';
+import { parseRawCsv, parseRawExcel, extractBookData, extractPaymentData, guessMapping, getSavedMapping, saveMapping } from './services/parserService';
 import { reconcileData } from './services/reconciliationService';
 import { FileUpload } from './components/FileUpload';
 import { ColumnMapper } from './components/ColumnMapper';
@@ -55,7 +55,7 @@ const App: React.FC = () => {
     for (const file of files) {
        try {
          const { headers, rows } = file.name.endsWith('csv') ? await parseRawCsv(file) : await parseRawExcel(file);
-         const guessed = guessMapping(headers);
+         const guessed = getSavedMapping(headers) || guessMapping(headers);
          newFiles.push({ file, headers, rows, mapping: guessed });
        } catch (e) {
          console.error("Failed to parse", file.name);
@@ -74,7 +74,7 @@ const App: React.FC = () => {
         const file = e.target.files[0];
         try {
             const { headers, rows } = file.name.endsWith('csv') ? await parseRawCsv(file) : await parseRawExcel(file);
-            const guessed = guessMapping(headers);
+            const guessed = getSavedMapping(headers) || guessMapping(headers);
             const newData: FileData = { file, headers, rows, mapping: guessed };
             
             setPaymentFiles(prev => prev.map((item, idx) => idx === replacingPaymentIndex ? newData : item));
@@ -88,11 +88,18 @@ const App: React.FC = () => {
   };
 
   const updateBookMapping = (m: ColumnMapping) => {
-    if (bookFile) setBookFile({ ...bookFile, mapping: m });
+    if (bookFile) {
+      setBookFile({ ...bookFile, mapping: m });
+    }
   };
 
   const updatePaymentMapping = (index: number, m: ColumnMapping) => {
-    setPaymentFiles(prev => prev.map((f, i) => i === index ? { ...f, mapping: m } : f));
+    setPaymentFiles(prev => {
+      const newFiles = [...prev];
+      newFiles[index] = { ...newFiles[index], mapping: m };
+      saveMapping(newFiles[index].headers, m);
+      return newFiles;
+    });
   };
 
   const removePaymentFile = (index: number) => {

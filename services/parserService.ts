@@ -280,6 +280,28 @@ export const extractPaymentData = (rows: any[], mapping: ColumnMapping, fileName
   return payments;
 };
 
+export const getSavedMapping = (headers: string[]): ColumnMapping | null => {
+  try {
+    const key = `mapping_${headers.join(',')}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("Failed to read saved mapping", e);
+  }
+  return null;
+};
+
+export const saveMapping = (headers: string[], mapping: ColumnMapping) => {
+  try {
+    const key = `mapping_${headers.join(',')}`;
+    localStorage.setItem(key, JSON.stringify(mapping));
+  } catch (e) {
+    console.error("Failed to save mapping", e);
+  }
+};
+
 // Auto-guesser for mapping
 export const guessMapping = (headers: string[]): ColumnMapping => {
   const mapping: ColumnMapping = { date: '', appId: '', amount: '', addGst: true };
