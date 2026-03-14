@@ -15,16 +15,16 @@ const parseCurrency = (value: any): number => {
 const normalizeKey = (key: string) => key.trim().toLowerCase();
 
 // Helper to extract clean ID from text
-// We look for 5-9 digit numbers. 
+// We look for 6-9 digit numbers. 
 // We explicitly avoid 10 digit numbers (phone numbers) by enforcing word boundaries.
 const extractIdFromText = (text: string): string | null => {
     if (!text) return null;
     
     // Regex explanation:
     // \b represents a word boundary.
-    // \d{5,9} matches 5 to 9 digits.
-    // This effectively ignores "8757065466" (10 digits) but matches "11146737" (8 digits).
-    const matches = text.match(/\b\d{5,9}\b/g);
+    // \d{6,9} matches 6 to 9 digits.
+    // This effectively ignores "8757065466" (10 digits) but matches "11146737" (8 digits) and "131426" (6 digits).
+    const matches = text.match(/\b\d{6,9}\b/g);
     
     if (matches && matches.length > 0) {
         return matches[0];

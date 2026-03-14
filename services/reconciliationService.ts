@@ -16,6 +16,7 @@ export const reconcileData = (books: BookEntry[], payments: PaymentEntry[]): { r
   let totalMatched = 0;
   let totalOverpaid = 0;
   let totalMissing = 0;
+  let totalFoundUnpaid = 0;
   let totalRevenueCollected = 0;
   let totalTargetRevenue = 0;
 
@@ -43,14 +44,21 @@ export const reconcileData = (books: BookEntry[], payments: PaymentEntry[]): { r
         return sum + p.pricePaid;
     }, 0);
 
-    const sources = Array.from(new Set(validPayments.map(p => p.sourceFile)));
+    const sources = Array.from(new Set(potentialPayments.map(p => p.sourceFile)));
 
     let status: MatchStatus;
+    let discrepancyNote: string | undefined = undefined;
 
     // Status logic based on Gross Paid (inclusive of GST) vs Target
     if (amountPaid === 0) {
-      status = MatchStatus.MISSING_PAYMENT;
-      totalMissing++;
+      if (potentialPayments.length > 0) {
+        status = MatchStatus.FOUND_UNPAID;
+        totalFoundUnpaid++;
+        discrepancyNote = "Found in payment file but amount is 0 (Unpaid/Zero Commission)";
+      } else {
+        status = MatchStatus.MISSING_PAYMENT;
+        totalMissing++;
+      }
     } else if (amountPaid > book.debit) {
       status = MatchStatus.OVERPAID;
       totalOverpaid++;
@@ -69,7 +77,8 @@ export const reconcileData = (books: BookEntry[], payments: PaymentEntry[]): { r
       difference: amountPaid - book.debit,
       status,
       sources,
-      bookDate: book.date
+      bookDate: book.date,
+      discrepancyNote
     });
   });
 
@@ -79,6 +88,7 @@ export const reconcileData = (books: BookEntry[], payments: PaymentEntry[]): { r
     totalMatched,
     totalOverpaid,
     totalMissing,
+    totalFoundUnpaid,
     totalRevenueCollected,
     totalTargetRevenue
   };

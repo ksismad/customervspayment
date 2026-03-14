@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   PieChart, Pie, Cell 
 } from 'recharts';
-import { AlertCircle, CheckCircle2, FileWarning, Download, Percent, IndianRupee, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileWarning, Download, Percent, IndianRupee, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface DashboardProps {
   results: ReconciliationResult[];
@@ -35,6 +35,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
   // Sorting State
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'bookDate', direction: 'desc' });
 
+  // Grouping State
+  const [groupBy, setGroupBy] = useState<'NONE' | 'TARGET' | 'GROSS_PAID'>('NONE');
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  const toggleGroup = (amount: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(amount)) next.delete(amount);
+      else next.add(amount);
+      return next;
+    });
+  };
+
   useEffect(() => {
     // Initial calculation based on Gross
     const initialData = results.map(r => {
@@ -44,7 +57,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
       // Green: Paid <= Target (Matched) - includes underpaid
       let status = MatchStatus.MATCHED;
       if (r.paymentAmount > r.bookAmount) status = MatchStatus.OVERPAID;
-      else if (r.paymentAmount === 0) status = MatchStatus.MISSING_PAYMENT;
+      else if (r.paymentAmount === 0) {
+        status = r.sources.length > 0 ? MatchStatus.FOUND_UNPAID : MatchStatus.MISSING_PAYMENT;
+      }
       
       return {
         ...r,
@@ -65,7 +80,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
     
     let status = MatchStatus.MATCHED;
     if (net > item.bookAmount) status = MatchStatus.OVERPAID;
-    else if (net === 0 && item.paymentAmount === 0) status = MatchStatus.MISSING_PAYMENT;
+    else if (net === 0 && item.paymentAmount === 0) {
+      status = item.sources.length > 0 ? MatchStatus.FOUND_UNPAID : MatchStatus.MISSING_PAYMENT;
+    }
     
     return {
       ...item,
@@ -100,6 +117,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
       totalMatched: 0,
       totalOverpaid: 0,
       totalMissing: 0,
+      totalFoundUnpaid: 0,
       totalRevenueCollected: 0,
       totalTargetRevenue: 0
     };
@@ -110,6 +128,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
       if (item.computedStatus === MatchStatus.MATCHED) s.totalMatched++;
       else if (item.computedStatus === MatchStatus.OVERPAID) s.totalOverpaid++;
       else if (item.computedStatus === MatchStatus.MISSING_PAYMENT) s.totalMissing++;
+      else if (item.computedStatus === MatchStatus.FOUND_UNPAID) s.totalFoundUnpaid++;
     });
 
     return s;
@@ -145,10 +164,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
     });
   }, [data, filter, searchTerm, sortConfig]);
 
+  const groupedResults = useMemo(() => {
+    if (groupBy === 'NONE') return null;
+    
+    const groups = new Map<number, ExtendedResult[]>();
+    filteredAndSortedResults.forEach(r => {
+      const key = groupBy === 'TARGET' ? r.bookAmount : r.paymentAmount;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    });
+
+    const result = Array.from(groups.entries()).map(([amount, records]) => {
+      let totalTarget = 0;
+      let totalPaid = 0;
+      let totalDiff = 0;
+      let totalNetPaid = 0;
+      let totalNetDiff = 0;
+      
+      records.forEach(r => {
+        totalTarget += r.bookAmount;
+        totalPaid += r.paymentAmount;
+        totalDiff += r.difference;
+        totalNetPaid += r.netPayment;
+        totalNetDiff += r.computedDifference;
+      });
+
+      return {
+        amount,
+        records,
+        totalTarget,
+        totalPaid,
+        totalDiff,
+        totalNetPaid,
+        totalNetDiff
+      };
+    });
+
+    // Sort groups by amount descending
+    return result.sort((a, b) => b.amount - a.amount);
+  }, [filteredAndSortedResults, groupBy]);
+
   const pieData = [
     { name: 'Matched (Green)', value: stats.totalMatched, color: '#10b981' }, 
     { name: 'Overpaid (Red)', value: stats.totalOverpaid, color: '#f43f5e' }, 
     { name: 'Missing (Yellow)', value: stats.totalMissing, color: '#f59e0b' }, 
+    { name: 'Found Unpaid (Red Alert)', value: stats.totalFoundUnpaid, color: '#dc2626' },
   ].filter(d => d.value > 0);
 
   const formatCurrency = (val: number) => {
@@ -210,7 +270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard 
           title="Net Revenue" 
           value={formatCurrency(stats.totalRevenueCollected)} 
@@ -238,6 +298,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
           subValue="No valid payment found"
           icon={<FileWarning className="w-5 h-5 text-amber-600" />}
           color="amber"
+        />
+        <StatCard 
+          title="Found Unpaid" 
+          value={stats.totalFoundUnpaid.toString()} 
+          subValue="Found in payment file but amount is 0"
+          icon={<AlertCircle className="w-5 h-5 text-red-600" />}
+          color="red"
         />
       </div>
 
@@ -330,6 +397,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
             />
             <select 
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              value={groupBy}
+              onChange={(e) => {
+                setGroupBy(e.target.value as any);
+                setExpandedGroups(new Set());
+              }}
+            >
+              <option value="NONE">No Grouping</option>
+              <option value="TARGET">Group by Target (Book)</option>
+              <option value="GROSS_PAID">Group by Gross Paid</option>
+            </select>
+            <select 
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               value={filter}
               onChange={(e) => setFilter(e.target.value as any)}
             >
@@ -337,6 +416,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
               <option value={MatchStatus.MATCHED}>Matched (Green)</option>
               <option value={MatchStatus.OVERPAID}>Overpaid (Red)</option>
               <option value={MatchStatus.MISSING_PAYMENT}>Missing (Yellow)</option>
+              <option value={MatchStatus.FOUND_UNPAID}>Found Unpaid (Red Alert)</option>
             </select>
             <button 
               onClick={downloadCSV}
@@ -365,47 +445,115 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredAndSortedResults.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
-                    No records found matching criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredAndSortedResults.map((row) => (
-                  <tr key={row.appId} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-slate-900">{row.appId}</td>
-                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(row.bookDate)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-600">{formatCurrency(row.bookAmount)}</td>
-                    
-                    {/* Swapped order in Body as well */}
-                    <td className="px-4 py-3 text-right font-mono text-slate-400" title="Includes 18% GST">{formatCurrency(row.paymentAmount)}</td>
-                    <td className={`px-4 py-3 text-right font-mono font-medium ${
-                      row.difference > 0 ? 'text-rose-600' : row.difference < 0 ? 'text-amber-600' : 'text-slate-400'
-                    }`}>
-                      {formatCurrency(row.difference)}
-                    </td>
-
-                    <td className="px-4 py-3 text-center">
-                      <input 
-                        type="number" 
-                        min="0"
-                        max="100"
-                        className="w-16 px-2 py-1 text-center border border-slate-200 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-                        value={row.discount}
-                        onClick={(e) => e.stopPropagation()} // Prevent row click issues
-                        onChange={(e) => handleRowDiscountChange(row.appId, e.target.value)}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">{formatCurrency(row.netPayment)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <StatusBadge status={row.computedStatus} />
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 truncate max-w-xs text-xs" title={row.sources.join(', ')}>
-                      {row.sources.length > 0 ? row.sources.join(', ') : '-'}
+              {groupBy === 'NONE' ? (
+                filteredAndSortedResults.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
+                      No records found matching criteria.
                     </td>
                   </tr>
-                ))
+                ) : (
+                  filteredAndSortedResults.map((row) => (
+                    <tr key={row.appId} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900">{row.appId}</td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(row.bookDate)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-600">{formatCurrency(row.bookAmount)}</td>
+                      
+                      {/* Swapped order in Body as well */}
+                      <td className="px-4 py-3 text-right font-mono text-slate-400" title="Includes 18% GST">{formatCurrency(row.paymentAmount)}</td>
+                      <td className={`px-4 py-3 text-right font-mono font-medium ${
+                        row.difference > 0 ? 'text-rose-600' : row.difference < 0 ? 'text-amber-600' : 'text-slate-400'
+                      }`}>
+                        {formatCurrency(row.difference)}
+                      </td>
+
+                      <td className="px-4 py-3 text-center">
+                        <input 
+                          type="number" 
+                          min="0"
+                          max="100"
+                          className="w-16 px-2 py-1 text-center border border-slate-200 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                          value={row.discount}
+                          onClick={(e) => e.stopPropagation()} // Prevent row click issues
+                          onChange={(e) => handleRowDiscountChange(row.appId, e.target.value)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">{formatCurrency(row.netPayment)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <StatusBadge status={row.computedStatus} />
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 truncate max-w-xs text-xs" title={row.sources.join(', ')}>
+                        {row.sources.length > 0 ? row.sources.join(', ') : '-'}
+                      </td>
+                    </tr>
+                  ))
+                )
+              ) : (
+                groupedResults?.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
+                      No records found matching criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  groupedResults?.map(group => (
+                    <React.Fragment key={group.amount}>
+                      <tr 
+                        className="bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors border-b border-slate-200"
+                        onClick={() => toggleGroup(group.amount)}
+                      >
+                        <td className="px-4 py-3 font-semibold text-slate-800 flex items-center gap-2">
+                          {expandedGroups.has(group.amount) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          {groupBy === 'TARGET' ? 'Target: ' : 'Paid: '} {formatCurrency(group.amount)}
+                          <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full ml-2">{group.records.length} records</span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-center">-</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-slate-700">{formatCurrency(group.totalTarget)}</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-slate-700">{formatCurrency(group.totalPaid)}</td>
+                        <td className={`px-4 py-3 text-right font-mono font-semibold ${
+                          group.totalDiff > 0 ? 'text-rose-600' : group.totalDiff < 0 ? 'text-amber-600' : 'text-slate-600'
+                        }`}>
+                          {formatCurrency(group.totalDiff)}
+                        </td>
+                        <td className="px-4 py-3 text-center text-slate-500">-</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-slate-800">{formatCurrency(group.totalNetPaid)}</td>
+                        <td className="px-4 py-3 text-center text-slate-500">-</td>
+                        <td className="px-4 py-3 text-slate-500 text-center">-</td>
+                      </tr>
+                      {expandedGroups.has(group.amount) && group.records.map(row => (
+                        <tr key={row.appId} className="hover:bg-slate-50 transition-colors bg-white">
+                          <td className="px-4 py-3 font-medium text-slate-900 pl-10">{row.appId}</td>
+                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(row.bookDate)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-600">{formatCurrency(row.bookAmount)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-400" title="Includes 18% GST">{formatCurrency(row.paymentAmount)}</td>
+                          <td className={`px-4 py-3 text-right font-mono font-medium ${
+                            row.difference > 0 ? 'text-rose-600' : row.difference < 0 ? 'text-amber-600' : 'text-slate-400'
+                          }`}>
+                            {formatCurrency(row.difference)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <input 
+                              type="number" 
+                              min="0"
+                              max="100"
+                              className="w-16 px-2 py-1 text-center border border-slate-200 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                              value={row.discount}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => handleRowDiscountChange(row.appId, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">{formatCurrency(row.netPayment)}</td>
+                          <td className="px-4 py-3 text-center">
+                            <StatusBadge status={row.computedStatus} />
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 truncate max-w-xs text-xs" title={row.sources.join(', ')}>
+                            {row.sources.length > 0 ? row.sources.join(', ') : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))
+                )
               )}
             </tbody>
           </table>
@@ -458,6 +606,12 @@ const StatusBadge: React.FC<{ status: MatchStatus }> = ({ status }) => {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
           <FileWarning className="w-3.5 h-3.5" /> Missing
+        </span>
+      );
+    case MatchStatus.FOUND_UNPAID:
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200" title="Found in payment file but amount is 0 (Unpaid/Zero Commission)">
+          <AlertCircle className="w-3.5 h-3.5" /> Unpaid Alert
         </span>
       );
     default:

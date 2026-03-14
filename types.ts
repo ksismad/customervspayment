@@ -23,6 +23,7 @@ export enum MatchStatus {
   MATCHED = 'MATCHED', // Green: Paid <= Target (and > 0)
   OVERPAID = 'OVERPAID', // Red: Paid > Target
   MISSING_PAYMENT = 'MISSING_PAYMENT', // Yellow: Paid == 0
+  FOUND_UNPAID = 'FOUND_UNPAID', // Red Alert: Found in payment file but amount is 0
   IGNORED = 'IGNORED'
 }
 
@@ -34,6 +35,7 @@ export interface ReconciliationResult {
   status: MatchStatus;
   sources: string[];
   bookDate: Date | null;
+  discrepancyNote?: string;
 }
 
 export interface DashboardStats {
@@ -42,6 +44,7 @@ export interface DashboardStats {
   totalMatched: number;
   totalOverpaid: number;
   totalMissing: number;
+  totalFoundUnpaid: number;
   totalRevenueCollected: number;
   totalTargetRevenue: number;
 }
