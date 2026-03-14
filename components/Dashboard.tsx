@@ -164,6 +164,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
     });
   }, [data, filter, searchTerm, sortConfig]);
 
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+  };
+
+  const formatDate = (date: Date | null) => {
+    if (!date) return '-';
+    return new Date(date).toLocaleDateString('en-GB'); 
+  };
+
   const groupedResults = useMemo(() => {
     if (groupBy === 'NONE') return null;
     
@@ -181,13 +190,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
       let totalNetPaid = 0;
       let totalNetDiff = 0;
       
+      const otherPricesCount = new Map<number, number>();
+
       records.forEach(r => {
         totalTarget += r.bookAmount;
         totalPaid += r.paymentAmount;
         totalDiff += r.difference;
         totalNetPaid += r.netPayment;
         totalNetDiff += r.computedDifference;
+        
+        const otherPrice = groupBy === 'TARGET' ? r.paymentAmount : r.bookAmount;
+        otherPricesCount.set(otherPrice, (otherPricesCount.get(otherPrice) || 0) + 1);
       });
+
+      const otherPricesSummary = Array.from(otherPricesCount.entries())
+        .sort((a, b) => b[1] - a[1]) // sort by count descending
+        .map(([price, count]) => `${formatCurrency(price)} (x${count})`)
+        .join(', ');
 
       return {
         amount,
@@ -196,7 +215,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
         totalPaid,
         totalDiff,
         totalNetPaid,
-        totalNetDiff
+        totalNetDiff,
+        otherPricesSummary
       };
     });
 
@@ -210,15 +230,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
     { name: 'Missing (Yellow)', value: stats.totalMissing, color: '#f59e0b' }, 
     { name: 'Found Unpaid (Red Alert)', value: stats.totalFoundUnpaid, color: '#dc2626' },
   ].filter(d => d.value > 0);
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
-  };
-
-  const formatDate = (date: Date | null) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('en-GB'); 
-  };
 
   const downloadCSV = () => {
     // Swapped: Paid (Gross + GST) comes before Diff (Gross)
@@ -502,10 +513,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ results }) => {
                         className="bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors border-b border-slate-200"
                         onClick={() => toggleGroup(group.amount)}
                       >
-                        <td className="px-4 py-3 font-semibold text-slate-800 flex items-center gap-2">
-                          {expandedGroups.has(group.amount) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                          {groupBy === 'TARGET' ? 'Target: ' : 'Paid: '} {formatCurrency(group.amount)}
-                          <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full ml-2">{group.records.length} records</span>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          <div className="flex items-center gap-2">
+                            {expandedGroups.has(group.amount) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                            <span>{groupBy === 'TARGET' ? 'Target: ' : 'Paid: '} {formatCurrency(group.amount)}</span>
+                            <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full ml-2">{group.records.length} records</span>
+                          </div>
+                          <div className="text-xs font-normal text-slate-500 ml-6 mt-1">
+                            {groupBy === 'TARGET' ? 'Paid breakdown: ' : 'Target breakdown: '} {group.otherPricesSummary}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-slate-500 text-center">-</td>
                         <td className="px-4 py-3 text-right font-mono font-semibold text-slate-700">{formatCurrency(group.totalTarget)}</td>
